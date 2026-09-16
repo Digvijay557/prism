@@ -1,0 +1,22 @@
+{
+  "name": "Prism",
+  "short_name": "Prism",
+  "description": "Tells you whether a YouTube educational video is worth your time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12121a",
+  "theme_color": "#12121a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

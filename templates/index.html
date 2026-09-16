@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Prism</title>
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#12121a">
+<style>
+  :root {
+    --bg: #12121a;
+    --bg-panel: #1a1a24;
+    --ink: #ece9f5;
+    --ink-dim: #9a95ad;
+    --line: #2a2a38;
+    --spectrum-high: #4fd1a5;
+    --spectrum-mid: #f0b555;
+    --spectrum-low: #e0607a;
+    --violet: #8b7fe0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    padding-bottom: 60px;
+  }
+
+  .header {
+    padding: 28px 20px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .wordmark {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, var(--spectrum-high), var(--violet), var(--spectrum-low));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    display: inline-block;
+  }
+
+  .tagline {
+    font-size: 13px;
+    color: var(--ink-dim);
+    margin-top: 4px;
+    line-height: 1.4;
+    max-width: 320px;
+  }
+
+  .input-area {
+    padding: 20px;
+  }
+
+  .url-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  #url-input {
+    flex: 1;
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+    outline: none;
+  }
+
+  #url-input:focus {
+    border-color: var(--violet);
+  }
+
+  #analyze-btn {
+    background: var(--violet);
+    color: #fff;
+    border: none;
+    padding: 14px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  #analyze-btn:active {
+    opacity: 0.8;
+  }
+
+  #analyze-btn:disabled {
+    opacity: 0.5;
+  }
+
+  .status-line {
+    padding: 0 20px;
+    font-size: 13px;
+    color: var(--ink-dim);
+    min-height: 20px;
+  }
+
+  .status-line.error {
+    color: var(--spectrum-low);
+  }
+
+  #results {
+    padding: 4px 20px 20px;
+  }
+
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+
+  .card-label {
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-bottom: 8px;
+  }
+
+  .verdict-card {
+    text-align: left;
+  }
+
+  .verdict-badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  .verdict-badge.worth { background: rgba(79,209,165,0.15); color: var(--spectrum-high); }
+  .verdict-badge.selective { background: rgba(240,181,85,0.15); color: var(--spectrum-mid); }
+  .verdict-badge.skip { background: rgba(224,96,122,0.15); color: var(--spectrum-low); }
+
+  .verdict-reason {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .card h3 {
+    font-size: 13px;
+    color: var(--ink-dim);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .card p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .topic-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .topic-list li {
+    font-size: 14px;
+    padding-left: 16px;
+    position: relative;
+    line-height: 1.4;
+  }
+
+  .topic-list.covered li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--spectrum-high);
+  }
+
+  .topic-list.missing li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--spectrum-low);
+  }
+
+  .skill-note {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--spectrum-mid);
+  }
+
+  .timeline-track {
+    display: flex;
+    gap: 2px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+
+  .timeline-segment {
+    flex-grow: 1;
+    height: 10px;
+  }
+
+  .timeline-segment.high { background: var(--spectrum-high); }
+  .timeline-segment.medium { background: var(--spectrum-mid); }
+  .timeline-segment.low { background: var(--spectrum-low); }
+
+  .timeline-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+
+  .timeline-legend span::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+  }
+
+  .timeline-legend .leg-high::before { background: var(--spectrum-high); }
+  .timeline-legend .leg-medium::before { background: var(--spectrum-mid); }
+  .timeline-legend .leg-low::before { background: var(--spectrum-low); }
+
+  .timeline-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .timeline-item {
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    align-items: baseline;
+  }
+
+  .timeline-time {
+    color: var(--ink-dim);
+    font-variant-numeric: tabular-nums;
+    min-width: 42px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--line);
+    border-top-color: var(--violet);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--ink-dim);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="wordmark">Prism</div>
+  <div class="tagline">YouTube tells you what to watch. Prism tells you what deserves your time.</div>
+</div>
+
+<div class="input-area">
+  <div class="url-row">
+    <input id="url-input" type="text" placeholder="Paste a YouTube link" autocomplete="off">
+    <button id="analyze-btn" onclick="analyze()">Check</button>
+  </div>
+</div>
+
+<div class="status-line" id="status"></div>
+
+<div id="results">
+  <div class="empty-state" id="empty-state">Paste a video link above to get a verdict.</div>
+</div>
+
+<script>
+  // Point this at your backend once deployed (Render URL or ngrok URL).
+  const API_BASE = "https://remember-sliver-exemplary.ngrok-free.dev/";
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
+
+  function verdictBadgeClass(verdict) {
+    if (verdict === "WORTH_WATCHING") return "worth";
+    if (verdict === "WATCH_SELECTIVELY") return "selective";
+    return "skip";
+  }
+
+  function verdictLabel(verdict) {
+    if (verdict === "WORTH_WATCHING") return "Worth Watching";
+    if (verdict === "WATCH_SELECTIVELY") return "Watch Selectively";
+    return "Skip";
+  }
+
+  function renderTimeline(timeline) {
+    if (!timeline || timeline.length === 0) return "";
+
+    const totalEnd = timeline[timeline.length - 1].end_seconds || 1;
+    const track = timeline.map(seg => {
+      const widthPct = ((seg.end_seconds - seg.start_seconds) / totalEnd) * 100;
+      return `<div class="timeline-segment ${seg.value}" style="flex-grow:${widthPct}"></div>`;
+    }).join("");
+
+    const list = timeline.map(seg => `
+      <div class="timeline-item">
+        <span class="timeline-time">${formatTime(seg.start_seconds)}</span>
+        <span>${seg.label}</span>
+      </div>
+    `).join("");
+
+    return `
+      <div class="card">
+        <h3>Valuable timeline</h3>
+        <div class="timeline-track">${track}</div>
+        <div class="timeline-legend">
+          <span class="leg-high">High value</span>
+          <span class="leg-medium">Medium</span>
+          <span class="leg-low">Low value</span>
+        </div>
+        <div class="timeline-list">${list}</div>
+      </div>
+    `;
+  }
+
+  function renderResults(data) {
+    const v = data.verdict;
+    const badgeClass = verdictBadgeClass(v.verdict);
+
+    let html = `
+      <div class="card verdict-card">
+        <span class="verdict-badge ${badgeClass}">${verdictLabel(v.verdict)}</span>
+        <div class="verdict-reason">${v.verdict_reason}</div>
+      </div>
+
+      <div class="card">
+        <h3>Promise</h3>
+        <p>${v.promise}</p>
+      </div>
+
+      <div class="card">
+        <h3>Reality — covered</h3>
+        <ul class="topic-list covered">
+          ${v.reality_covered.map(t => `<li>${t}</li>`).join("")}
+        </ul>
+      </div>
+    `;
+
+    if (v.reality_missing && v.reality_missing.length > 0) {
+      html += `
+        <div class="card">
+          <h3>Reality — missing</h3>
+          <ul class="topic-list missing">
+            ${v.reality_missing.map(t => `<li>${t}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+    }
+
+    html += `
+      <div class="card">
+        <h3>Depth</h3>
+        <p>${v.depth_notes}</p>
+      </div>
+
+      <div class="card">
+        <h3>Skill level fit</h3>
+        <p>${v.skill_level_fit}</p>
+        ${v.skill_level_note ? `<div class="skill-note">${v.skill_level_note}</div>` : ""}
+      </div>
+
+      <div class="card">
+        <h3>Time assessment</h3>
+        <p>${v.time_assessment}</p>
+      </div>
+    `;
+
+    html += renderTimeline(v.valuable_timeline);
+
+    document.getElementById("results").innerHTML = html;
+  }
+
+  async function analyze() {
+    const url = document.getElementById("url-input").value.trim();
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("analyze-btn");
+    const resultsEl = document.getElementById("results");
+
+    if (!url) {
+      statusEl.textContent = "Paste a YouTube link first.";
+      statusEl.className = "status-line error";
+      return;
+    }
+
+    btn.disabled = true;
+    statusEl.className = "status-line";
+    statusEl.innerHTML = `<span class="spinner"></span>Reading the video...`;
+    resultsEl.innerHTML = "";
+
+    try {
+      const response = await fetch(`${API_BASE}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        statusEl.textContent = data.error || "Something went wrong.";
+        statusEl.className = "status-line error";
+        resultsEl.innerHTML = `<div class="empty-state">${data.error || "Could not analyze this video."}</div>`;
+        return;
+      }
+
+      statusEl.textContent = "";
+      renderResults(data);
+
+    } catch (err) {
+      statusEl.textContent = "Could not reach the server. Check your connection.";
+      statusEl.className = "status-line error";
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById("url-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") analyze();
+  });
+</script>
+
+</body>
+</html>
