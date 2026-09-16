@@ -7,3 +7,4 @@ requests==2.33.1
 youtube-transcript-api==1.2.4
 google-genai==2.23.0
 gunicorn==23.0.0
+yt-dlp

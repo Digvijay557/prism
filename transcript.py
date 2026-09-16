@@ -2,17 +2,16 @@
 transcript.py
 Handles: extracting a YouTube video ID from any URL format,
 and fetching the transcript/caption text (timed segments) for that video.
+
+Uses yt-dlp to pull caption tracks. This hits a different YouTube endpoint
+than youtube_transcript_api, so it's less likely to be IP-blocked the same way.
 """
 
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.proxies import GenericProxyConfig
 import os
-from youtube_transcript_api._errors import (
-    TranscriptsDisabled,
-    NoTranscriptFound,
-    VideoUnavailable,
-)
+import json
+import urllib.request
+import yt_dlp
 
 
 def extract_video_id(url: str) -> str | None:
@@ -42,106 +41,38 @@ def extract_video_id(url: str) -> str | None:
 
     return None
 
-def fetch_transcript(video_id: str) -> dict:
-    if not video_id:
-        return {"success": False, "error": "Invalid or missing video ID."}
 
-    proxy_username = os.environ["WEBSHARE_USERNAME"]
-    proxy_password = os.environ["WEBSHARE_PASSWORD"]
-
-    proxy_ips = [
-        "31.59.20.176:6754",
-        "45.38.107.97:6014",
-        "198.105.121.200:6462",
-        "64.137.96.74:6641",
-        "198.23.243.226:6361",
-    ]
-
-    last_error = None
-
-    for ip_port in proxy_ips:
-        try:
-            proxy_url = f"http://{proxy_username}:{proxy_password}@{ip_port}"
-            ytt_api = YouTubeTranscriptApi(
-                proxy_config=GenericProxyConfig(
-                    http_url=proxy_url,
-                    https_url=proxy_url,
-                )
-            )
-            fetched = ytt_api.fetch(video_id)
-
-            segments = [
-                {"text": s.text, "start": s.start, "duration": s.duration}
-                for s in fetched
-            ]
-
-            if segments:
-                return {"success": True, "segments": segments}
-
-        except TranscriptsDisabled:
-            return {"success": False, "error": "Captions are disabled for this video."}
-        except NoTranscriptFound:
-            return {"success": False, "error": "No transcript/caption available for this video."}
-        except VideoUnavailable:
-            return {"success": False, "error": "This video is unavailable or private."}
-        except Exception as e:
-            last_error = str(e)
-            continue  # try next proxy IP
-
-    return {"success": False, "error": f"All proxies failed. Last error: {last_error}"}
+def _parse_json3_captions(raw_bytes: bytes) -> list:
     """
-    Fetches the transcript (caption track) for a given video ID.
-    Works identically whether the caption is auto-generated or
-    manually uploaded by the creator -- the API returns the same shape.
-
-    Returns a dict:
-        {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...]}
-    or on failure:
-        {"success": False, "error": "<reason>"}
+    Parses YouTube's json3 caption format into our segments shape.
+    json3 events look like: {"tStartMs": 1000, "dDurationMs": 2000, "segs": [{"utf8": "hello"}]}
     """
-    if not video_id:
-        return {"success": False, "error": "Invalid or missing video ID."}
+    data = json.loads(raw_bytes.decode("utf-8"))
+    segments = []
 
-    try:
-        proxy_username = os.environ["WEBSHARE_USERNAME"]
-        proxy_password = os.environ["WEBSHARE_PASSWORD"]
-        proxy_url = f"http://{proxy_username}:{proxy_password}@31.59.20.176:6754"
-
-        ytt_api = YouTubeTranscriptApi(
-            proxy_config=GenericProxyConfig(
-                http_url=proxy_url,
-                https_url=proxy_url,
-            )
+    for event in data.get("events", []):
+        if "segs" not in event:
+            continue
+        text = "".join(seg.get("utf8", "") for seg in event["segs"]).strip()
+        if not text:
+            continue
+        start_ms = event.get("tStartMs", 0)
+        duration_ms = event.get("dDurationMs", 0)
+        segments.append(
+            {
+                "text": text,
+                "start": start_ms / 1000.0,
+                "duration": duration_ms / 1000.0,
+            }
         )
-        fetched = ytt_api.fetch(video_id)
 
-        segments = [
-            {
-                "text": snippet.text,
-                "start": snippet.start,
-                "duration": snippet.duration,
-            }
-            for snippet in fetched
-        ]
+    return segments
 
-        if not segments:
-            return {"success": False, "error": "Transcript came back empty."}
 
-        return {"success": True, "segments": segments}
-
-    except TranscriptsDisabled:
-        return {"success": False, "error": "Captions are disabled for this video."}
-    except NoTranscriptFound:
-        return {"success": False, "error": "No transcript/caption available for this video."}
-    except VideoUnavailable:
-        return {"success": False, "error": "This video is unavailable or private."}
-    except Exception as e:
-        # Catch-all so a weird library error never crashes the whole request.
-        return {"success": False, "error": f"Transcript fetch failed: {str(e)}"}
+def fetch_transcript(video_id: str) -> dict:
     """
-    Fetches the transcript (caption track) for a given video ID.
-    Works identically whether the caption is auto-generated or
-    manually uploaded by the creator -- the API returns the same shape.
+    Fetches the transcript (caption track) for a given video ID using yt-dlp.
+    Tries manually-uploaded subtitles first, falls back to auto-generated captions.
 
     Returns a dict:
         {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...]}
@@ -151,33 +82,53 @@ def fetch_transcript(video_id: str) -> dict:
     if not video_id:
         return {"success": False, "error": "Invalid or missing video ID."}
 
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    ydl_opts = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en"],
+        "quiet": True,
+        "no_warnings": True,
+    }
+
     try:
-        ytt_api = YouTubeTranscriptApi()
-        fetched = ytt_api.fetch(video_id)
-
-        segments = [
-            {
-                "text": snippet.text,
-                "start": snippet.start,
-                "duration": snippet.duration,
-            }
-            for snippet in fetched
-        ]
-
-        if not segments:
-            return {"success": False, "error": "Transcript came back empty."}
-
-        return {"success": True, "segments": segments}
-
-    except TranscriptsDisabled:
-        return {"success": False, "error": "Captions are disabled for this video."}
-    except NoTranscriptFound:
-        return {"success": False, "error": "No transcript/caption available for this video."}
-    except VideoUnavailable:
-        return {"success": False, "error": "This video is unavailable or private."}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
     except Exception as e:
-        # Catch-all so a weird library error never crashes the whole request.
         return {"success": False, "error": f"Transcript fetch failed: {str(e)}"}
+
+    # Prefer manual subtitles, fall back to auto-generated ("automatic_captions")
+    subs = info.get("subtitles", {}).get("en") or info.get("automatic_captions", {}).get("en")
+
+    if not subs:
+        return {"success": False, "error": "No transcript/caption available for this video."}
+
+    # Find a json3 format track if available (easiest to parse); else take the first one
+    track = next((s for s in subs if s.get("ext") == "json3"), subs[0])
+    caption_url = track.get("url")
+
+    if not caption_url:
+        return {"success": False, "error": "Caption track had no URL."}
+
+    try:
+        with urllib.request.urlopen(caption_url, timeout=15) as resp:
+            raw = resp.read()
+
+        if track.get("ext") == "json3":
+            segments = _parse_json3_captions(raw)
+        else:
+            # Unknown format fallback - shouldn't normally hit this since we prefer json3
+            return {"success": False, "error": f"Unsupported caption format: {track.get('ext')}"}
+
+    except Exception as e:
+        return {"success": False, "error": f"Failed to download/parse captions: {str(e)}"}
+
+    if not segments:
+        return {"success": False, "error": "Transcript came back empty."}
+
+    return {"success": True, "segments": segments}
 
 
 def format_transcript_for_prompt(segments: list, chunk_seconds: int = 30) -> str:
