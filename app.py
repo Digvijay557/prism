@@ -4,7 +4,7 @@ Single Flask endpoint: /analyze
 Takes a YouTube URL, runs the full pipeline, returns the verdict JSON.
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask import render_template
 from transcript import extract_video_id, fetch_transcript, format_transcript_for_prompt
@@ -17,6 +17,11 @@ CORS(app)  # allow the frontend (served from anywhere) to call this API
 @app.route("/")
 def home():
     return render_template("index.html")
+
+
+@app.route('/.well-known/assetlinks.json')
+def assetlinks():
+    return send_from_directory('static/.well-known', 'assetlinks.json')
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
