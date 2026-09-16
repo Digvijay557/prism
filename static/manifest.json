@@ -1,22 +1,23 @@
 {
   "name": "Prism",
   "short_name": "Prism",
-  "description": "Tells you whether a YouTube educational video is worth your time.",
+  "description": "YouTube tells you what to watch. Prism tells you what deserves your time.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#12121a",
-  "theme_color": "#12121a",
-  "orientation": "portrait",
+  "background_color": "#0a0a0f",
+  "theme_color": "#8b5cf6",
   "icons": [
     {
-      "src": "/static/icon-192.png",
+      "src": "/static/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "/static/icon-512.png",
+      "src": "/static/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

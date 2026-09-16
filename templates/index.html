@@ -6,6 +6,8 @@
 <title>Prism</title>
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#12121a">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <style>
   :root {
     --bg: #12121a;
@@ -458,6 +460,12 @@
   document.getElementById("url-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") analyze();
   });
+</script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/service-worker.js");
+  }
 </script>
 
 </body>
