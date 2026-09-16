@@ -241,16 +241,18 @@ def call_groq(prompt: str) -> dict:
     Returns {"success": True, "raw_text": "..."} or {"success": False, "error": "..."}
     """
     groq_key = os.getenv("GROQ_KEY", "")
+    groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+
     if not groq_key:
         msg = "No GROQ_KEY set in the environment."
         logger.error(msg)
         return {"success": False, "error": msg}
 
     try:
-        logger.info("Calling Groq fallback.")
+        logger.info("Calling Groq fallback with model %s.", groq_model)
         client = Groq(api_key=groq_key)
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=groq_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
