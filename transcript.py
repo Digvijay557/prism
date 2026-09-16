@@ -3,6 +3,10 @@ transcript.py
 Handles: extracting a YouTube video ID from any URL format,
 and fetching the transcript/caption text (timed segments) for that video.
 
+Also extracts the video title as a side effect of the primary fetch --
+youtube-transcript.ai's response includes it in the header line, so we
+get a reliable title for free without any extra request or scrape.
+
 Primary source: youtube-transcript.ai (free, no key, not IP-blocked).
 Fallback source: yt-dlp directly (works if the free service is ever down).
 """
@@ -51,6 +55,7 @@ def extract_video_id(url: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 _TIMESTAMP_LINE_RE = re.compile(r"^\[(\d+):(\d{2})(?::(\d{2}))?\]\s*(.*)$")
+_TITLE_HEADER_RE = re.compile(r"^#\s*Transcript:\s*(.+)$")
 
 
 def _timestamp_to_seconds(mm_or_hh: str, ss: str, extra_ss: str | None) -> float:
@@ -68,6 +73,25 @@ def _timestamp_to_seconds(mm_or_hh: str, ss: str, extra_ss: str | None) -> float
         minutes = int(mm_or_hh)
         seconds = int(ss)
         return minutes * 60 + seconds
+
+
+def _extract_title_from_header(raw_text: str) -> str:
+    """
+    youtube-transcript.ai's response starts with a line like:
+        # Transcript: Everyone Is Wrong About AI Data Centers Water Use
+    Pulls the title out of that line. Returns "" if not found.
+    """
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = _TITLE_HEADER_RE.match(line)
+        if match:
+            return match.group(1).strip()
+        # The title line is always the first non-blank line -- if we hit
+        # something else first, there's no title header to find.
+        break
+    return ""
 
 
 def _parse_transcript_ai_text(raw_text: str) -> list:
@@ -128,8 +152,9 @@ def _parse_transcript_ai_text(raw_text: str) -> list:
 
 def _fetch_from_transcript_ai(video_id: str) -> dict:
     """
-    Tries to fetch the transcript from youtube-transcript.ai.
-    Returns {"success": True, "segments": [...]} or {"success": False, "error": ...}
+    Tries to fetch the transcript (and title) from youtube-transcript.ai.
+    Returns {"success": True, "segments": [...], "title": "..."}
+    or {"success": False, "error": ...}
     """
     url = f"https://youtube-transcript.ai/transcript/{video_id}.txt"
 
@@ -149,7 +174,9 @@ def _fetch_from_transcript_ai(video_id: str) -> dict:
     if not segments:
         return {"success": False, "error": "youtube-transcript.ai returned no parseable segments."}
 
-    return {"success": True, "segments": segments}
+    title = _extract_title_from_header(raw_text)
+
+    return {"success": True, "segments": segments, "title": title}
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +247,8 @@ def _build_ydl_opts(client: str, cookie_file: str | None) -> dict:
 def _fetch_from_yt_dlp(video_id: str) -> dict:
     """
     Fallback transcript fetch using yt-dlp directly. Same logic as before,
-    used only when youtube-transcript.ai fails.
+    used only when youtube-transcript.ai fails. Also grabs the title from
+    yt-dlp's info dict, since we have it right there.
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
     cookie_file = _prepare_cookie_file()
@@ -250,6 +278,8 @@ def _fetch_from_yt_dlp(video_id: str) -> dict:
             )
         return {"success": False, "error": f"yt-dlp fallback failed: {last_error}{hint}"}
 
+    title = (info.get("title") or "").strip()
+
     subs = info.get("subtitles", {}).get("en") or info.get("automatic_captions", {}).get("en")
     if not subs:
         return {"success": False, "error": "No transcript/caption available for this video."}
@@ -271,7 +301,7 @@ def _fetch_from_yt_dlp(video_id: str) -> dict:
     if not segments:
         return {"success": False, "error": "Transcript came back empty."}
 
-    return {"success": True, "segments": segments}
+    return {"success": True, "segments": segments, "title": title}
 
 
 # ---------------------------------------------------------------------------
@@ -281,14 +311,16 @@ def _fetch_from_yt_dlp(video_id: str) -> dict:
 
 def fetch_transcript(video_id: str) -> dict:
     """
-    Fetches the transcript for a video ID.
+    Fetches the transcript (and title, when available) for a video ID.
 
     Tries youtube-transcript.ai first (fast, not IP-blocked). If that fails
     for any reason, falls back to yt-dlp directly (with cookies if
     YT_COOKIES is set).
 
     Returns:
-        {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...]}
+        {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...], "title": "..."}
+    ("title" may be "" if neither source could supply one -- callers should
+    fall back to scraper.py's oEmbed/scrape path in that case.)
     or:
         {"success": False, "error": "<reason>"}
     """
@@ -352,6 +384,7 @@ if __name__ == "__main__":
 
     result = fetch_transcript(vid)
     if result["success"]:
+        print("Title:", result.get("title"))
         print(f"Got {len(result['segments'])} segments.")
         print(format_transcript_for_prompt(result["segments"])[:500])
     else:
