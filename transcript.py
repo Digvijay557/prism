@@ -43,6 +43,52 @@ def extract_video_id(url: str) -> str | None:
     return None
 
 def fetch_transcript(video_id: str) -> dict:
+    if not video_id:
+        return {"success": False, "error": "Invalid or missing video ID."}
+
+    proxy_username = os.environ["WEBSHARE_USERNAME"]
+    proxy_password = os.environ["WEBSHARE_PASSWORD"]
+
+    proxy_ips = [
+        "31.59.20.176:6754",
+        "45.38.107.97:6014",
+        "198.105.121.200:6462",
+        "64.137.96.74:6641",
+        "198.23.243.226:6361",
+    ]
+
+    last_error = None
+
+    for ip_port in proxy_ips:
+        try:
+            proxy_url = f"http://{proxy_username}:{proxy_password}@{ip_port}"
+            ytt_api = YouTubeTranscriptApi(
+                proxy_config=GenericProxyConfig(
+                    http_url=proxy_url,
+                    https_url=proxy_url,
+                )
+            )
+            fetched = ytt_api.fetch(video_id)
+
+            segments = [
+                {"text": s.text, "start": s.start, "duration": s.duration}
+                for s in fetched
+            ]
+
+            if segments:
+                return {"success": True, "segments": segments}
+
+        except TranscriptsDisabled:
+            return {"success": False, "error": "Captions are disabled for this video."}
+        except NoTranscriptFound:
+            return {"success": False, "error": "No transcript/caption available for this video."}
+        except VideoUnavailable:
+            return {"success": False, "error": "This video is unavailable or private."}
+        except Exception as e:
+            last_error = str(e)
+            continue  # try next proxy IP
+
+    return {"success": False, "error": f"All proxies failed. Last error: {last_error}"}
     """
     Fetches the transcript (caption track) for a given video ID.
     Works identically whether the caption is auto-generated or
