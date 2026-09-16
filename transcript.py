@@ -3,25 +3,41 @@ transcript.py
 Handles: extracting a YouTube video ID from any URL format,
 and fetching the transcript/caption text (timed segments) for that video.
 
-Uses yt-dlp to pull caption tracks. This hits a different YouTube endpoint
-than youtube_transcript_api, so it's less likely to be IP-blocked the same way.
+Uses yt-dlp. On servers (Render etc.) YouTube often demands sign-in, so this
+supports an optional cookies file supplied via the YT_COOKIES env var.
 """
 
 import re
 import os
 import json
-import urllib.request
 import yt_dlp
+
+COOKIE_PATH = "/tmp/yt_cookies.txt"
+
+
+def _prepare_cookie_file() -> str | None:
+    """
+    If the YT_COOKIES env var is set (full Netscape cookies.txt contents),
+    write it to a temp file and return the path. Otherwise return None.
+    """
+    raw = os.environ.get("YT_COOKIES", "").strip()
+    if not raw:
+        return None
+
+    try:
+        # Render's env vars sometimes collapse newlines; repair the common case.
+        if "\\n" in raw and "\n" not in raw:
+            raw = raw.replace("\\n", "\n")
+        with open(COOKIE_PATH, "w", encoding="utf-8") as f:
+            f.write(raw + "\n")
+        return COOKIE_PATH
+    except Exception:
+        return None
 
 
 def extract_video_id(url: str) -> str | None:
     """
-    Pulls the 11-character YouTube video ID out of any common URL format:
-    - https://www.youtube.com/watch?v=VIDEOID
-    - https://youtu.be/VIDEOID
-    - https://www.youtube.com/watch?v=VIDEOID&t=30s
-    - https://m.youtube.com/watch?v=VIDEOID
-    - https://www.youtube.com/shorts/VIDEOID
+    Pulls the 11-character YouTube video ID out of any common URL format.
     Returns None if no valid ID pattern is found.
     """
     if not url:
@@ -32,6 +48,7 @@ def extract_video_id(url: str) -> str | None:
         r"(?:youtu\.be/)([a-zA-Z0-9_-]{11})",
         r"(?:youtube\.com/shorts/)([a-zA-Z0-9_-]{11})",
         r"(?:youtube\.com/embed/)([a-zA-Z0-9_-]{11})",
+        r"(?:youtube\.com/live/)([a-zA-Z0-9_-]{11})",
     ]
 
     for pattern in patterns:
@@ -45,7 +62,6 @@ def extract_video_id(url: str) -> str | None:
 def _parse_json3_captions(raw_bytes: bytes) -> list:
     """
     Parses YouTube's json3 caption format into our segments shape.
-    json3 events look like: {"tStartMs": 1000, "dDurationMs": 2000, "segs": [{"utf8": "hello"}]}
     """
     data = json.loads(raw_bytes.decode("utf-8"))
     segments = []
@@ -69,59 +85,83 @@ def _parse_json3_captions(raw_bytes: bytes) -> list:
     return segments
 
 
-def fetch_transcript(video_id: str) -> dict:
-    """
-    Fetches the transcript (caption track) for a given video ID using yt-dlp.
-    Tries manually-uploaded subtitles first, falls back to auto-generated captions.
-
-    Returns a dict:
-        {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...]}
-    or on failure:
-        {"success": False, "error": "<reason>"}
-    """
-    if not video_id:
-        return {"success": False, "error": "Invalid or missing video ID."}
-
-    url = f"https://www.youtube.com/watch?v={video_id}"
-
-    ydl_opts = {
+def _build_opts(client: str, cookie_file: str | None) -> dict:
+    """Builds yt-dlp options for one attempt with a specific player client."""
+    opts = {
         "skip_download": True,
         "writesubtitles": True,
         "writeautomaticsub": True,
         "subtitleslangs": ["en"],
         "quiet": True,
         "no_warnings": True,
+        "extractor_args": {"youtube": {"player_client": [client]}},
     }
+    if cookie_file:
+        opts["cookiefile"] = cookie_file
+    return opts
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+
+def fetch_transcript(video_id: str) -> dict:
+    """
+    Fetches the transcript for a video ID using yt-dlp.
+
+    Tries several YouTube "player clients" in order, because some are checked
+    for bot-detection far more aggressively than others. Uses cookies if
+    available. Returns:
+        {"success": True, "segments": [...]}
+    or:
+        {"success": False, "error": "<reason>"}
+    """
+    if not video_id:
+        return {"success": False, "error": "Invalid or missing video ID."}
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    cookie_file = _prepare_cookie_file()
+
+    # Order matters: these tend to be least-to-most likely to trigger a bot check.
+    clients = ["android", "ios", "mweb", "web"]
+
+    info = None
+    ydl_used = None
+    last_error = "Unknown error."
+
+    for client in clients:
+        try:
+            ydl = yt_dlp.YoutubeDL(_build_opts(client, cookie_file))
             info = ydl.extract_info(url, download=False)
-    except Exception as e:
-        return {"success": False, "error": f"Transcript fetch failed: {str(e)}"}
+            ydl_used = ydl
+            break
+        except Exception as e:
+            last_error = str(e)
+            info = None
+            continue
 
-    # Prefer manual subtitles, fall back to auto-generated ("automatic_captions")
+    if not info:
+        hint = ""
+        if "not a bot" in last_error or "Sign in" in last_error:
+            hint = (
+                " YouTube is blocking this server's IP. "
+                "Set the YT_COOKIES environment variable to fix this."
+            )
+        return {"success": False, "error": f"Transcript fetch failed: {last_error}{hint}"}
+
     subs = info.get("subtitles", {}).get("en") or info.get("automatic_captions", {}).get("en")
 
     if not subs:
         return {"success": False, "error": "No transcript/caption available for this video."}
 
-    # Find a json3 format track if available (easiest to parse); else take the first one
-    track = next((s for s in subs if s.get("ext") == "json3"), subs[0])
-    caption_url = track.get("url")
+    track = next((s for s in subs if s.get("ext") == "json3"), None)
+    if not track:
+        return {"success": False, "error": "No json3 caption track available for this video."}
 
+    caption_url = track.get("url")
     if not caption_url:
         return {"success": False, "error": "Caption track had no URL."}
 
     try:
-        with urllib.request.urlopen(caption_url, timeout=15) as resp:
-            raw = resp.read()
-
-        if track.get("ext") == "json3":
-            segments = _parse_json3_captions(raw)
-        else:
-            # Unknown format fallback - shouldn't normally hit this since we prefer json3
-            return {"success": False, "error": f"Unsupported caption format: {track.get('ext')}"}
-
+        # Use yt-dlp's own opener so cookies/headers carry over.
+        raw = ydl_used.urlopen(caption_url).read()
+        segments = _parse_json3_captions(raw)
     except Exception as e:
         return {"success": False, "error": f"Failed to download/parse captions: {str(e)}"}
 
@@ -133,12 +173,8 @@ def fetch_transcript(video_id: str) -> dict:
 
 def format_transcript_for_prompt(segments: list, chunk_seconds: int = 30) -> str:
     """
-    Converts raw transcript segments into readable chunks with timestamp
-    markers, instead of dumping hundreds of tiny fragments into the prompt.
-
-    Groups consecutive segments into ~chunk_seconds-second blocks, each
-    prefixed with [start_seconds], so Gemini/Groq has real time-anchors
-    to build the valuable_timeline output accurately.
+    Converts raw transcript segments into readable ~chunk_seconds blocks,
+    each prefixed with [start_seconds], so the model has real time anchors.
     """
     if not segments:
         return ""
@@ -148,7 +184,6 @@ def format_transcript_for_prompt(segments: list, chunk_seconds: int = 30) -> str
     current_chunk_start = segments[0]["start"]
 
     for seg in segments:
-        # If this segment starts a new chunk_seconds window, flush the current one.
         if seg["start"] - current_chunk_start >= chunk_seconds and current_chunk_text:
             chunks.append(
                 f"[{int(current_chunk_start)}s] " + " ".join(current_chunk_text)
@@ -158,14 +193,12 @@ def format_transcript_for_prompt(segments: list, chunk_seconds: int = 30) -> str
 
         current_chunk_text.append(seg["text"].strip())
 
-    # Flush whatever's left.
     if current_chunk_text:
         chunks.append(f"[{int(current_chunk_start)}s] " + " ".join(current_chunk_text))
 
     return "\n".join(chunks)
 
 
-# Quick manual test when running this file directly.
 if __name__ == "__main__":
     test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     vid = extract_video_id(test_url)
