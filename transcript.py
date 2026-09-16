@@ -8,17 +8,37 @@ youtube-transcript.ai's response includes it in the header line, so we
 get a reliable title for free without any extra request or scrape.
 
 Primary source: youtube-transcript.ai (free, no key, not IP-blocked).
-Fallback source: yt-dlp directly (works if the free service is ever down).
+Retries with backoff on timeouts/5xx/429, since the endpoint generates
+transcripts on demand and a cold request can take a while.
+Fallback source: yt-dlp directly (works if the free service is ever down,
+though it needs YT_COOKIES set to get past YouTube's bot check from most
+server IPs).
 """
 
 import re
 import os
 import json
+import time
 import urllib.request
 import urllib.error
 import yt_dlp
 
 COOKIE_PATH = "/tmp/yt_cookies.txt"
+
+# Override in the environment to point at a different transcript provider
+# without touching this file, e.g. TRANSCRIPT_API_BASE=https://other-host/api
+TRANSCRIPT_API_BASE = os.environ.get(
+    "TRANSCRIPT_API_BASE", "https://youtube-transcript.ai"
+).rstrip("/")
+
+# The endpoint generates transcripts on demand, so a cold request for an
+# uncached video can take a while. Generous by default; tune via env if needed.
+TRANSCRIPT_TIMEOUT = float(os.environ.get("TRANSCRIPT_TIMEOUT", "45"))
+TRANSCRIPT_RETRIES = int(os.environ.get("TRANSCRIPT_RETRIES", "3"))
+
+# Status codes worth trying again. 404 is deliberately absent: it means
+# there's no transcript for this video, and no amount of retrying helps.
+_RETRYABLE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 
 
 def extract_video_id(url: str) -> str | None:
@@ -51,7 +71,7 @@ def extract_video_id(url: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Primary source: youtube-transcript.ai
+# Primary source: youtube-transcript.ai (or whatever TRANSCRIPT_API_BASE is)
 # ---------------------------------------------------------------------------
 
 _TIMESTAMP_LINE_RE = re.compile(r"^\[(\d+):(\d{2})(?::(\d{2}))?\]\s*(.*)$")
@@ -150,33 +170,91 @@ def _parse_transcript_ai_text(raw_text: str) -> list:
     return segments
 
 
+def _transcript_url(video_id: str) -> str:
+    return f"{TRANSCRIPT_API_BASE}/transcript/{video_id}.txt"
+
+
 def _fetch_from_transcript_ai(video_id: str) -> dict:
     """
-    Tries to fetch the transcript (and title) from youtube-transcript.ai.
+    Fetches the transcript (and title) from the transcript API, retrying
+    on timeouts and transient server errors.
+
+    The endpoint generates transcripts on demand, so a cold request for an
+    uncached video can legitimately take longer than a short timeout allows.
+    We use a generous per-attempt timeout plus a few retries with backoff
+    rather than failing straight to the yt-dlp fallback on the first hiccup.
+
     Returns {"success": True, "segments": [...], "title": "..."}
     or {"success": False, "error": ...}
     """
-    url = f"https://youtube-transcript.ai/transcript/{video_id}.txt"
+    url = _transcript_url(video_id)
+    last_error = "no attempt made"
 
-    try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (Prism transcript fetcher)"}
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw_text = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        return {"success": False, "error": f"youtube-transcript.ai returned HTTP {e.code}"}
-    except Exception as e:
-        return {"success": False, "error": f"youtube-transcript.ai request failed: {str(e)}"}
+    for attempt in range(1, TRANSCRIPT_RETRIES + 1):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "text/plain, */*",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=TRANSCRIPT_TIMEOUT) as resp:
+                raw_text = resp.read().decode("utf-8", errors="replace")
 
-    segments = _parse_transcript_ai_text(raw_text)
+        except urllib.error.HTTPError as e:
+            last_error = f"HTTP {e.code} from {TRANSCRIPT_API_BASE}"
+            if e.code == 404:
+                return {
+                    "success": False,
+                    "error": (
+                        "Transcript source has no captions for this video "
+                        "(HTTP 404) -- the video may have captions disabled."
+                    ),
+                }
+            if e.code not in _RETRYABLE_STATUSES:
+                return {"success": False, "error": last_error}
 
-    if not segments:
-        return {"success": False, "error": "youtube-transcript.ai returned no parseable segments."}
+        except Exception as e:
+            # Covers socket.timeout, URLError, connection resets, etc.
+            last_error = f"{type(e).__name__}: {e}"
 
-    title = _extract_title_from_header(raw_text)
+        else:
+            segments = _parse_transcript_ai_text(raw_text)
+            if segments:
+                return {
+                    "success": True,
+                    "segments": segments,
+                    "title": _extract_title_from_header(raw_text),
+                }
 
-    return {"success": True, "segments": segments, "title": title}
+            # A 200 with nothing parseable sometimes means "still generating,
+            # come back shortly", so this is worth one more go.
+            last_error = (
+                f"returned {len(raw_text)} chars but no parseable "
+                f"timestamped segments"
+            )
+
+        if attempt < TRANSCRIPT_RETRIES:
+            backoff = 2 ** (attempt - 1)  # 1s, 2s, 4s...
+            print(
+                f"[transcript] attempt {attempt}/{TRANSCRIPT_RETRIES} failed "
+                f"({last_error}); retrying in {backoff}s",
+                flush=True,
+            )
+            time.sleep(backoff)
+
+    return {
+        "success": False,
+        "error": (
+            f"Transcript source failed after {TRANSCRIPT_RETRIES} attempts. "
+            f"Last error: {last_error}"
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +327,12 @@ def _fetch_from_yt_dlp(video_id: str) -> dict:
     Fallback transcript fetch using yt-dlp directly. Same logic as before,
     used only when youtube-transcript.ai fails. Also grabs the title from
     yt-dlp's info dict, since we have it right there.
+
+    Note: from most server/datacenter IPs, YouTube will show a "Sign in to
+    confirm you're not a bot" error here regardless of client spoofing --
+    that's not something this code can work around. Set YT_COOKIES (a full
+    Netscape cookies.txt exported from a logged-in browser session, ideally
+    on a throwaway account) to get past it.
     """
     url = f"https://www.youtube.com/watch?v={video_id}"
     cookie_file = _prepare_cookie_file()
@@ -272,10 +356,18 @@ def _fetch_from_yt_dlp(video_id: str) -> dict:
     if not info:
         hint = ""
         if "not a bot" in last_error or "Sign in" in last_error:
-            hint = (
-                " YouTube is blocking this server's IP. "
-                "Set the YT_COOKIES environment variable to fix this."
-            )
+            if cookie_file:
+                hint = (
+                    " YT_COOKIES is set but YouTube still rejected the "
+                    "request -- the cookies may be expired or the account "
+                    "flagged. Re-export fresh cookies from a logged-in "
+                    "browser session."
+                )
+            else:
+                hint = (
+                    " YouTube is blocking this server's IP. "
+                    "Set the YT_COOKIES environment variable to fix this."
+                )
         return {"success": False, "error": f"yt-dlp fallback failed: {last_error}{hint}"}
 
     title = (info.get("title") or "").strip()
@@ -313,9 +405,9 @@ def fetch_transcript(video_id: str) -> dict:
     """
     Fetches the transcript (and title, when available) for a video ID.
 
-    Tries youtube-transcript.ai first (fast, not IP-blocked). If that fails
-    for any reason, falls back to yt-dlp directly (with cookies if
-    YT_COOKIES is set).
+    Tries the transcript API first (fast, not IP-blocked, retried on
+    timeouts/transient errors). If that fails for any reason, falls back
+    to yt-dlp directly (with cookies if YT_COOKIES is set).
 
     Returns:
         {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...], "title": "..."}
