@@ -88,8 +88,9 @@ def _fetch_from_supadata(video_id: str) -> dict:
     if not SUPADATA_API_KEY:
         return {"success": False, "error": "SUPADATA_API_KEY not set."}
 
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
     params = urllib.parse.urlencode(
-        {"videoId": video_id, "text": "false", "lang": "en"}
+        {"url": video_url, "text": "false", "lang": "en"}
     )
     url = f"{SUPADATA_BASE}/transcript?{params}"
 
