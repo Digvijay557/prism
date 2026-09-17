@@ -557,6 +557,3 @@ if __name__ == "__main__":
         print(format_transcript_for_prompt(result["segments"])[:500])
     else:
         print("Error:", result["error"])
-
-
-        
