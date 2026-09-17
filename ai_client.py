@@ -241,7 +241,7 @@ def call_groq(prompt: str) -> dict:
     Returns {"success": True, "raw_text": "..."} or {"success": False, "error": "..."}
     """
     groq_key = os.getenv("GROQ_KEY", "")
-    groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+    groq_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
     if not groq_key:
         msg = "No GROQ_KEY set in the environment."
