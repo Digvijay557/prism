@@ -502,16 +502,19 @@ def fetch_transcript(video_id: str) -> dict:
 
     primary_result = _fetch_from_yt_dlp(video_id)
     if primary_result["success"]:
+        print(f"[transcript] source=yt-dlp video_id={video_id}", flush=True)
         return primary_result
     errors.append(f"yt-dlp error: {primary_result['error']}")
 
     secondary_result = _fetch_from_transcript_ai(video_id)
     if secondary_result["success"]:
+        print(f"[transcript] source=youtube-transcript.ai video_id={video_id}", flush=True)
         return secondary_result
     errors.append(f"youtube-transcript.ai error: {secondary_result['error']}")
 
     supadata_result = _fetch_from_supadata(video_id)
     if supadata_result["success"]:
+        print(f"[transcript] source=supadata video_id={video_id}", flush=True)
         return supadata_result
     errors.append(f"Supadata error: {supadata_result['error']}")
 
