@@ -5,228 +5,461 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Prism</title>
 <link rel="manifest" href="/static/manifest.json">
-<meta name="theme-color" content="#12121a">
+<meta name="theme-color" content="#f5f1ed">
 <link rel="icon" href="/static/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #12121a;
-    --bg-panel: #1a1a24;
-    --ink: #ece9f5;
-    --ink-dim: #9a95ad;
-    --line: #2a2a38;
-    --spectrum-high: #4fd1a5;
-    --spectrum-mid: #f0b555;
-    --spectrum-low: #e0607a;
-    --violet: #8b7fe0;
+    --shadow-grey: #252323;
+    --slate-grey: #70798c;
+    --parchment: #f5f1ed;
+    --bone: #dad2bc;
+    --khaki-beige: #a99985;
+
+    --r-1: #e0607a;
+    --r-2: #e08a5c;
+    --r-3: #e0c25c;
+    --r-4: #6fbf8f;
+    --r-5: #5c9ee0;
+    --r-6: #7d6ee0;
+    --r-7: #b56ed6;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-    -webkit-font-smoothing: antialiased;
+  html, body {
+    background: var(--parchment);
+    color: var(--shadow-grey);
     min-height: 100vh;
-    padding-bottom: 60px;
   }
 
+  body {
+    font-family: 'Inter', -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 460px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- Header ---------- */
+
   .header {
-    padding: 28px 20px 20px;
-    border-bottom: 1px solid var(--line);
+    padding: 40px 24px 28px;
+    text-align: center;
+  }
+
+  .pixel {
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 0.02em;
+    line-height: 1;
   }
 
   .wordmark {
-    font-size: 26px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    background: linear-gradient(90deg, var(--spectrum-high), var(--violet), var(--spectrum-low));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-size: 30px;
+    color: var(--shadow-grey);
+    text-shadow:
+      1px 1px 0 var(--khaki-beige),
+      2px 2px 0 var(--khaki-beige),
+      3px 3px 0 var(--khaki-beige);
     display: inline-block;
   }
 
   .tagline {
     font-size: 13px;
-    color: var(--ink-dim);
-    margin-top: 4px;
-    line-height: 1.4;
-    max-width: 320px;
+    color: var(--slate-grey);
+    margin-top: 14px;
+    line-height: 1.5;
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
+  /* ---------- Input ---------- */
+
   .input-area {
-    padding: 20px;
+    padding: 4px 24px 0;
   }
 
   .url-row {
     display: flex;
-    gap: 8px;
+    align-items: center;
+    background: var(--parchment);
+    border: 2px solid var(--shadow-grey);
+    border-radius: 999px;
+    padding: 6px 6px 6px 20px;
+    gap: 10px;
+    box-shadow: 3px 3px 0 var(--khaki-beige);
   }
 
   #url-input {
     flex: 1;
-    background: var(--bg-panel);
-    border: 1px solid var(--line);
-    color: var(--ink);
-    padding: 14px 16px;
-    border-radius: 10px;
+    background: transparent;
+    border: none;
+    color: var(--shadow-grey);
+    padding: 12px 0;
     font-size: 15px;
+    font-family: 'Inter', sans-serif;
     outline: none;
   }
 
-  #url-input:focus {
-    border-color: var(--violet);
+  #url-input::placeholder {
+    color: var(--khaki-beige);
   }
 
   #analyze-btn {
-    background: var(--violet);
-    color: #fff;
+    background: var(--shadow-grey);
     border: none;
-    padding: 14px 20px;
-    border-radius: 10px;
-    font-size: 15px;
-    font-weight: 600;
-    white-space: nowrap;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 120ms ease, opacity 120ms ease;
   }
 
-  #analyze-btn:active {
-    opacity: 0.8;
-  }
+  #analyze-btn svg { display: block; }
 
-  #analyze-btn:disabled {
-    opacity: 0.5;
-  }
+  #analyze-btn:active { transform: scale(0.92); }
+
+  #analyze-btn:disabled { opacity: 0.45; cursor: default; }
 
   .status-line {
-    padding: 0 20px;
+    padding: 14px 24px 0;
     font-size: 13px;
-    color: var(--ink-dim);
-    min-height: 20px;
+    color: var(--slate-grey);
+    min-height: 18px;
+    text-align: center;
   }
 
-  .status-line.error {
-    color: var(--spectrum-low);
+  .status-line.error { color: var(--r-1); }
+
+  /* ---------- Stage (uwu / analyzing / oops) ---------- */
+
+  .stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 24px 10px;
+    min-height: 300px;
+    text-align: center;
   }
+
+  .stage-word {
+    font-size: 96px;
+    color: var(--khaki-beige);
+    text-shadow:
+      1px 1px 0 var(--bone),
+      2px 2px 0 var(--bone),
+      3px 3px 0 var(--bone),
+      4px 4px 0 rgba(37,35,35,0.12);
+    margin-bottom: 34px;
+    user-select: none;
+    animation: love-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .stage-word.is-love {
+    color: var(--r-1);
+    text-shadow:
+      1px 1px 0 var(--bone),
+      2px 2px 0 var(--bone),
+      3px 3px 0 var(--bone),
+      4px 4px 0 rgba(224,96,122,0.18);
+    animation: love-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes love-pop {
+    0% { transform: scale(0.6) rotate(-6deg); opacity: 0; }
+    60% { transform: scale(1.12) rotate(3deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+
+  .stage-word.is-error {
+    color: var(--r-1);
+    text-shadow:
+      1px 1px 0 rgba(224,96,122,0.25),
+      2px 2px 0 rgba(224,96,122,0.25),
+      3px 3px 0 rgba(224,96,122,0.25);
+  }
+
+  .stage-word.is-analyzing {
+    color: var(--shadow-grey);
+    font-size: 34px;
+    text-shadow:
+      1px 1px 0 var(--bone),
+      2px 2px 0 var(--bone),
+      3px 3px 0 var(--bone);
+    animation: word-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes word-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  /* Triangle + rainbow glow */
+
+  .triangle-wrap {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .glow {
+    position: absolute;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    filter: blur(18px);
+    opacity: 0;
+    background: conic-gradient(
+      from 0deg,
+      var(--r-1), var(--r-2), var(--r-3), var(--r-4), var(--r-5), var(--r-6), var(--r-7), var(--r-1)
+    );
+    transition: opacity 400ms ease;
+  }
+
+  .triangle-wrap.analyzing .glow {
+    opacity: 0.85;
+    animation: spectrum-spin 3.2s linear infinite, glow-breathe 1.8s ease-in-out infinite;
+  }
+
+  @keyframes spectrum-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes glow-breathe {
+    0%, 100% { transform: scale(0.9); }
+    50% { transform: scale(1.08); }
+  }
+
+  .triangle {
+    position: relative;
+    width: 0;
+    height: 0;
+    border-left: 26px solid transparent;
+    border-right: 26px solid transparent;
+    border-bottom: 42px solid var(--shadow-grey);
+    transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), border-bottom-color 320ms ease;
+    filter: drop-shadow(2px 2px 0 var(--khaki-beige));
+  }
+
+  .triangle-wrap.pointing-down .triangle {
+    transform: rotate(180deg);
+    border-bottom-color: var(--r-1);
+    filter: drop-shadow(2px 2px 0 rgba(224,96,122,0.3));
+  }
+
+  .triangle-wrap.analyzing .triangle {
+    animation: triangle-breathe 1.8s ease-in-out infinite;
+  }
+
+  @keyframes triangle-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+
+  /* ---------- Skeleton (brief loading state before cards) ---------- */
+
+  .skeleton-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 6px 24px 0;
+  }
+
+  .skeleton-bar {
+    height: 58px;
+    border-radius: 14px;
+    background: linear-gradient(90deg, var(--bone) 0%, #e7e1d3 50%, var(--bone) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.3s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ---------- Results ---------- */
 
   #results {
-    padding: 4px 20px 20px;
+    padding: 4px 24px 20px;
   }
 
   .card {
-    background: var(--bg-panel);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 18px;
+    background: var(--bone);
+    border: 2px solid var(--shadow-grey);
+    border-radius: 16px;
+    padding: 20px;
     margin-bottom: 14px;
+    box-shadow: 3px 3px 0 var(--khaki-beige);
+  }
+
+  .card.genie-card {
+    transform-origin: 50% 100%;
+  }
+
+  .card.genie-fallback {
+    animation: genie-reveal 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(var(--card-index, 0) * 85ms);
+  }
+
+  @keyframes genie-reveal {
+    0% {
+      opacity: 0;
+      clip-path: inset(100% 0 0 0 round 16px);
+      transform: perspective(700px) translateY(42px) scaleY(0.08) scaleX(0.72);
+    }
+    55% {
+      opacity: 1;
+      clip-path: inset(0 0 0 0 round 16px);
+      transform: perspective(700px) translateY(-4px) scaleY(1.03) scaleX(0.98);
+    }
+    100% {
+      opacity: 1;
+      clip-path: inset(0 0 0 0 round 16px);
+      transform: perspective(700px) translateY(0) scaleY(1) scaleX(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card.genie-fallback,
+    .triangle-wrap.analyzing .glow,
+    .triangle-wrap.analyzing .triangle,
+    .stage-word.is-analyzing,
+    .skeleton-bar { animation: none; }
   }
 
   .card-label {
     font-size: 11px;
-    color: var(--ink-dim);
+    color: var(--slate-grey);
     margin-bottom: 8px;
   }
 
-  .verdict-card {
-    text-align: left;
-  }
+  .verdict-card { text-align: left; }
 
   .verdict-badge {
     display: inline-block;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 13px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 12px;
     font-weight: 700;
-    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+    margin-bottom: 12px;
+    border: 2px solid var(--shadow-grey);
   }
 
-  .verdict-badge.worth { background: rgba(79,209,165,0.15); color: var(--spectrum-high); }
-  .verdict-badge.selective { background: rgba(240,181,85,0.15); color: var(--spectrum-mid); }
-  .verdict-badge.skip { background: rgba(224,96,122,0.15); color: var(--spectrum-low); }
+  .verdict-badge.worth { background: var(--r-4); color: #14261b; }
+  .verdict-badge.selective { background: var(--r-3); color: #2e2609; }
+  .verdict-badge.skip { background: var(--r-1); color: #2a0d13; }
 
   .verdict-reason {
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.55;
+    color: var(--shadow-grey);
   }
 
   .card h3 {
-    font-size: 13px;
-    color: var(--ink-dim);
-    font-weight: 600;
-    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--slate-grey);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-bottom: 10px;
   }
 
   .card p {
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.55;
+    color: var(--shadow-grey);
   }
 
   .topic-list {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .topic-list li {
     font-size: 14px;
-    padding-left: 16px;
+    padding-left: 18px;
     position: relative;
-    line-height: 1.4;
+    line-height: 1.45;
+    color: var(--shadow-grey);
   }
 
   .topic-list.covered li::before {
     content: "";
     position: absolute;
     left: 0;
-    top: 8px;
-    width: 6px;
-    height: 6px;
+    top: 7px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: var(--spectrum-high);
+    background: var(--r-4);
   }
 
   .topic-list.missing li::before {
     content: "";
     position: absolute;
     left: 0;
-    top: 8px;
-    width: 6px;
-    height: 6px;
+    top: 7px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: var(--spectrum-low);
+    background: var(--r-1);
   }
 
   .skill-note {
-    margin-top: 8px;
+    margin-top: 10px;
     font-size: 13px;
-    color: var(--spectrum-mid);
+    color: var(--khaki-beige);
+    font-weight: 600;
   }
 
   .timeline-track {
     display: flex;
     gap: 2px;
-    border-radius: 6px;
+    border-radius: 8px;
     overflow: hidden;
-    margin-top: 10px;
+    margin-top: 12px;
+    border: 2px solid var(--shadow-grey);
   }
 
-  .timeline-segment {
-    flex-grow: 1;
-    height: 10px;
-  }
+  .timeline-segment { flex-grow: 1; height: 12px; }
 
-  .timeline-segment.high { background: var(--spectrum-high); }
-  .timeline-segment.medium { background: var(--spectrum-mid); }
-  .timeline-segment.low { background: var(--spectrum-low); }
+  .timeline-segment.high { background: var(--r-4); }
+  .timeline-segment.medium { background: var(--r-3); }
+  .timeline-segment.low { background: var(--r-1); }
 
   .timeline-legend {
     display: flex;
     gap: 16px;
     margin-top: 10px;
     font-size: 12px;
-    color: var(--ink-dim);
+    color: var(--slate-grey);
   }
 
   .timeline-legend span::before {
@@ -238,15 +471,15 @@
     margin-right: 5px;
   }
 
-  .timeline-legend .leg-high::before { background: var(--spectrum-high); }
-  .timeline-legend .leg-medium::before { background: var(--spectrum-mid); }
-  .timeline-legend .leg-low::before { background: var(--spectrum-low); }
+  .timeline-legend .leg-high::before { background: var(--r-4); }
+  .timeline-legend .leg-medium::before { background: var(--r-3); }
+  .timeline-legend .leg-low::before { background: var(--r-1); }
 
   .timeline-list {
-    margin-top: 10px;
+    margin-top: 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
   }
 
   .timeline-item {
@@ -254,59 +487,159 @@
     gap: 10px;
     font-size: 13px;
     align-items: baseline;
+    color: var(--shadow-grey);
   }
 
   .timeline-time {
-    color: var(--ink-dim);
+    color: var(--slate-grey);
     font-variant-numeric: tabular-nums;
     min-width: 42px;
   }
 
-  .spinner {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--line);
-    border-top-color: var(--violet);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .empty-state {
-    padding: 60px 20px;
-    text-align: center;
-    color: var(--ink-dim);
-    font-size: 14px;
+  @media (min-width: 640px) {
+    .app { max-width: 520px; }
+    .header { padding-top: 56px; }
+    .wordmark { font-size: 36px; }
   }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <div class="wordmark">Prism</div>
-  <div class="tagline">YouTube tells you what to watch. Prism tells you what deserves your time.</div>
-</div>
+<div class="app">
 
-<div class="input-area">
-  <div class="url-row">
-    <input id="url-input" type="text" placeholder="Paste a YouTube link" autocomplete="off">
-    <button id="analyze-btn" onclick="analyze()">Check</button>
+  <div class="header">
+    <div class="wordmark pixel">PRISM</div>
+    <div class="tagline">worth ur time</div>
   </div>
+
+  <div class="input-area">
+    <div class="url-row">
+      <input id="url-input" type="text" placeholder="Paste a YouTube link" autocomplete="off">
+      <button id="analyze-btn" onclick="analyze()" aria-label="Analyze">
+        <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+          <path d="M1 7H16M16 7L10.5 1.5M16 7L10.5 12.5" stroke="#f5f1ed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="status-line" id="status"></div>
+
+  <div class="stage" id="stage">
+    <div class="stage-word pixel" id="stage-word">uwu</div>
+    <div class="triangle-wrap" id="triangle-wrap">
+      <div class="glow"></div>
+      <div class="triangle"></div>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
 </div>
 
-<div class="status-line" id="status"></div>
-
-<div id="results">
-  <div class="empty-state" id="empty-state">Paste a video link above to get a verdict.</div>
-</div>
+<script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+    }
+  }
+</script>
 
 <script>
   // Point this at your backend once deployed (Render URL or ngrok URL).
   const API_BASE = "";
+  let resultsRoot = null;
+
+  const framerMotionPromise = Promise.all([
+    import("react"),
+    import("react-dom/client"),
+    import("https://esm.sh/framer-motion@11.18.2?external=react,react-dom")
+  ]).then(([React, ReactDOM, FramerMotion]) => ({
+    React: React.default,
+    createRoot: ReactDOM.createRoot,
+    motion: FramerMotion.motion
+  }));
+
+  const stageEl = document.getElementById("stage");
+  const stageWordEl = document.getElementById("stage-word");
+  const triangleWrapEl = document.getElementById("triangle-wrap");
+  const resultsEl = document.getElementById("results");
+  const statusEl = document.getElementById("status");
+  const btn = document.getElementById("analyze-btn");
+
+  function playPop(el) {
+    el.style.animation = "none";
+    void el.offsetWidth; // force reflow to restart animation
+    el.style.animation = "";
+  }
+
+  let loveTimer = null;
+  let currentStageMode = "idle";
+
+  function triggerLove() {
+    // Only when no output is showing yet (idle or error state) and not mid-analysis.
+    if (triangleWrapEl.classList.contains("analyzing")) return;
+    if (loveTimer) return; // already showing ILUVU, let it finish
+
+    const previousMode = currentStageMode;
+    stageWordEl.classList.remove("is-error");
+    stageWordEl.classList.add("is-love");
+    stageWordEl.textContent = "ILUVU";
+    playPop(stageWordEl);
+
+    loveTimer = setTimeout(() => {
+      loveTimer = null;
+      stageWordEl.classList.remove("is-love");
+      if (previousMode === "error") {
+        stageWordEl.classList.add("is-error");
+        stageWordEl.textContent = "oops!";
+      } else {
+        stageWordEl.textContent = "uwu";
+      }
+      playPop(stageWordEl);
+    }, 5000);
+  }
+
+  triangleWrapEl.addEventListener("click", triggerLove);
+
+  function setStage(mode) {
+    // mode: "idle" | "analyzing" | "error"
+    currentStageMode = mode;
+    if (loveTimer) { clearTimeout(loveTimer); loveTimer = null; }
+    stageEl.style.display = "flex";
+    resultsEl.innerHTML = "";
+    if (resultsRoot) { resultsRoot.unmount(); resultsRoot = null; }
+
+    triangleWrapEl.classList.remove("analyzing", "pointing-down");
+    stageWordEl.classList.remove("is-analyzing", "is-error", "is-love");
+
+    if (mode === "idle") {
+      stageWordEl.textContent = "uwu";
+      playPop(stageWordEl);
+    } else if (mode === "analyzing") {
+      stageWordEl.textContent = "analyzing";
+      stageWordEl.classList.add("is-analyzing");
+      triangleWrapEl.classList.add("analyzing");
+    } else if (mode === "error") {
+      stageWordEl.textContent = "oops!";
+      stageWordEl.classList.add("is-error");
+      triangleWrapEl.classList.add("pointing-down");
+      playPop(stageWordEl);
+    }
+  }
+
+  function showSkeleton() {
+    stageEl.style.display = "none";
+    resultsEl.innerHTML = `
+      <div class="skeleton-list">
+        <div class="skeleton-bar"></div>
+        <div class="skeleton-bar"></div>
+        <div class="skeleton-bar"></div>
+      </div>
+    `;
+  }
 
   function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
@@ -357,6 +690,8 @@
   }
 
   function renderResults(data) {
+    if (loveTimer) { clearTimeout(loveTimer); loveTimer = null; }
+    stageEl.style.display = "none";
     const v = data.verdict;
     const badgeClass = verdictBadgeClass(v.verdict);
 
@@ -410,25 +745,67 @@
 
     html += renderTimeline(v.valuable_timeline);
 
-    document.getElementById("results").innerHTML = html;
+    resultsEl.innerHTML = html;
+    mountAnimatedCards(resultsEl);
+  }
+
+  function mountAnimatedCards(el) {
+    const cards = Array.from(el.querySelectorAll(".card")).map((card, index) => ({
+      className: `${card.className} genie-card`,
+      content: card.innerHTML,
+      index
+    }));
+
+    el.innerHTML = "";
+    framerMotionPromise.then(({ React, createRoot, motion }) => {
+      resultsRoot = createRoot(el);
+      resultsRoot.render(React.createElement(
+        React.Fragment,
+        null,
+        cards.map(card => React.createElement(
+          motion.div,
+          {
+            key: card.index,
+            className: card.className,
+            initial: { opacity: 0, scaleY: 0.08, scaleX: 0.72, y: 42 },
+            animate: { opacity: 1, scaleY: 1, scaleX: 1, y: 0 },
+            transition: {
+              type: "spring",
+              stiffness: 220,
+              damping: 22,
+              mass: 0.8,
+              delay: card.index * 0.085
+            },
+            style: { transformOrigin: "50% 100%" },
+            dangerouslySetInnerHTML: { __html: card.content }
+          }
+        ))
+      ));
+    }).catch(() => {
+      cards.forEach(card => {
+        const fallback = document.createElement("div");
+        fallback.className = `${card.className} genie-fallback`;
+        fallback.innerHTML = card.content;
+        fallback.style.setProperty("--card-index", card.index);
+        el.appendChild(fallback);
+      });
+    });
   }
 
   async function analyze() {
     const url = document.getElementById("url-input").value.trim();
-    const statusEl = document.getElementById("status");
-    const btn = document.getElementById("analyze-btn");
-    const resultsEl = document.getElementById("results");
 
     if (!url) {
       statusEl.textContent = "Paste a YouTube link first.";
       statusEl.className = "status-line error";
+      setStage("error");
       return;
     }
 
     btn.disabled = true;
     statusEl.className = "status-line";
-    statusEl.innerHTML = `<span class="spinner"></span>Reading the video...`;
-    resultsEl.innerHTML = "";
+    statusEl.textContent = "";
+    setStage("analyzing");
 
     try {
       const response = await fetch(`${API_BASE}/analyze`, {
@@ -442,16 +819,19 @@
       if (!data.success) {
         statusEl.textContent = data.error || "Something went wrong.";
         statusEl.className = "status-line error";
-        resultsEl.innerHTML = `<div class="empty-state">${data.error || "Could not analyze this video."}</div>`;
+        setStage("error");
         return;
       }
 
+      showSkeleton();
+      await new Promise(r => setTimeout(r, 550));
       statusEl.textContent = "";
       renderResults(data);
 
     } catch (err) {
       statusEl.textContent = "Could not reach the server. Check your connection.";
       statusEl.className = "status-line error";
+      setStage("error");
     } finally {
       btn.disabled = false;
     }
