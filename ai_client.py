@@ -11,6 +11,7 @@ falling through to the next tier.
 import os
 import json
 import re
+import time
 import logging
 from google import genai
 from google.genai import errors as genai_errors
@@ -139,13 +140,26 @@ def _parse_and_validate(raw_text: str) -> dict:
     return {"success": True, "data": data}
 
 
-def _build_prompt(title: str, description: str, transcript: str) -> str:
-    max_transcript_chars = 40000
+def _build_prompt(title: str, description: str, transcript: str, max_transcript_chars: int = 40000) -> str:
+    """
+    Builds the final prompt, truncating the transcript to max_transcript_chars
+    if needed. Callers pass a smaller cap for token-limited providers (e.g.
+    Groq's free tier) and the default (generous) cap for providers without
+    a tight per-request token ceiling (e.g. Gemini).
+    """
     if len(transcript) > max_transcript_chars:
         transcript = transcript[:max_transcript_chars] + "\n[...transcript truncated for length...]"
     return PRISM_PROMPT_TEMPLATE.format(
         title=title, description=description, transcript=transcript
     )
+
+
+# Groq's free tier caps at 8000 tokens/minute for the *whole* request (prompt
+# + completion). ~4 chars/token is a safe rule of thumb, so keep the Groq
+# transcript well under that -- 12000 chars (~3000 tokens) leaves headroom
+# for the template text, title/description, and the model's own output
+# tokens (max_tokens=4000 below).
+GROQ_MAX_TRANSCRIPT_CHARS = 12000
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +170,17 @@ class GeminiRotator:
     Holds a list of Gemini API keys and rotates through them.
     - Round-robins on every call (spreads daily-quota load evenly).
     - On a 429 (rate limit), immediately retries with the next key.
+    - On a 503 (server overloaded), retries the SAME key a couple of times
+      with a short backoff before moving on -- this is Google's servers
+      being temporarily busy, not a problem with the key itself.
     - Tracks keys that are dead for this session (quota exhausted) so we
       stop wasting time retrying them.
     """
+
+    # How many times to retry a single key on a transient 503 before giving
+    # up on it and moving to the next key.
+    MAX_503_RETRIES = 2
+    BACKOFF_SECONDS = 2
 
     def __init__(self):
         raw_keys = os.getenv("GEMINI_KEYS", "")
@@ -184,9 +206,18 @@ class GeminiRotator:
                 return key
         return None  # all keys exhausted
 
+    def _call_once(self, key: str, prompt: str):
+        """Makes a single Gemini API call. Raises on failure."""
+        client = genai.Client(api_key=key)
+        return client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=prompt,
+        )
+
     def generate(self, prompt: str) -> dict:
         """
         Tries every live key in rotation until one succeeds or all fail.
+        Retries a key a few times on transient 503s before moving on.
         Returns {"success": True, "raw_text": "..."} or {"success": False, "error": "..."}
         """
         tried = 0
@@ -201,34 +232,46 @@ class GeminiRotator:
 
             tried += 1
             key_label = f"...{key[-4:]}"  # never log the full key
-            try:
-                logger.info("Gemini attempt %d using key %s", tried, key_label)
-                client = genai.Client(api_key=key)
-                response = client.models.generate_content(
-                    model="gemini-3.6-flash",
-                    contents=prompt,
-                )
-                logger.info("Gemini call succeeded on key %s", key_label)
-                return {"success": True, "raw_text": response.text}
 
-            except genai_errors.ClientError as e:
-                # 429 = rate limited on this key -> mark dead for this session, try next.
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    self.dead_keys.add(key)
-                    last_error = f"Key {key_label} rate-limited: {str(e)}"
+            for retry in range(self.MAX_503_RETRIES + 1):
+                try:
+                    logger.info(
+                        "Gemini attempt %d using key %s (retry %d)",
+                        tried, key_label, retry,
+                    )
+                    response = self._call_once(key, prompt)
+                    logger.info("Gemini call succeeded on key %s", key_label)
+                    return {"success": True, "raw_text": response.text}
+
+                except genai_errors.ServerError as e:
+                    # 503 = model temporarily overloaded on Google's end.
+                    # Worth a short retry on the SAME key before giving up on it.
+                    last_error = f"Gemini server error on key {key_label}: {str(e)}"
                     logger.warning(last_error)
-                    continue
-                else:
-                    # Non-rate-limit client error (bad model name, bad request,
-                    # invalid API key, etc.) -- retrying with a different key
-                    # won't fix most of these, so stop here and surface it loudly.
-                    logger.error("Gemini client error on key %s: %s", key_label, e)
-                    return {"success": False, "error": f"Gemini client error: {str(e)}"}
+                    if retry < self.MAX_503_RETRIES:
+                        time.sleep(self.BACKOFF_SECONDS * (retry + 1))
+                        continue
+                    break  # exhausted retries on this key, move to next key
 
-            except Exception as e:
-                last_error = f"Gemini call failed on key {key_label}: {type(e).__name__}: {str(e)}"
-                logger.exception(last_error)
-                continue
+                except genai_errors.ClientError as e:
+                    # 429 = rate limited on this key -> mark dead for this
+                    # session, try next key immediately (no point retrying).
+                    if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                        self.dead_keys.add(key)
+                        last_error = f"Key {key_label} rate-limited: {str(e)}"
+                        logger.warning(last_error)
+                        break
+                    else:
+                        # Non-rate-limit client error (bad model name, bad
+                        # request, invalid API key, etc.) -- retrying won't
+                        # fix most of these, so stop here and surface it.
+                        logger.error("Gemini client error on key %s: %s", key_label, e)
+                        return {"success": False, "error": f"Gemini client error: {str(e)}"}
+
+                except Exception as e:
+                    last_error = f"Gemini call failed on key {key_label}: {type(e).__name__}: {str(e)}"
+                    logger.exception(last_error)
+                    break
 
         msg = f"All Gemini keys failed. Last error: {last_error}"
         logger.error(msg)
@@ -340,17 +383,21 @@ def get_verdict(title: str, description: str, transcript: str, video_id: str = N
     or {"success": False, "error": "..."}
     """
     global _gemini_rotator
-    prompt = _build_prompt(title, description, transcript)
+
+    # Gemini gets the generous default cap; Groq gets its own much smaller
+    # cap built separately below, right before it's actually called -- this
+    # is what fixes the 413 "Request too large" error.
+    gemini_prompt = _build_prompt(title, description, transcript)
     logger.info(
-        "get_verdict called | video_id=%s | transcript chars=%d | prompt chars=%d",
-        video_id, len(transcript or ""), len(prompt),
+        "get_verdict called | video_id=%s | transcript chars=%d | gemini prompt chars=%d",
+        video_id, len(transcript or ""), len(gemini_prompt),
     )
 
     # TIER 1: Gemini
     try:
         if _gemini_rotator is None:
             _gemini_rotator = GeminiRotator()
-        gemini_result = _gemini_rotator.generate(prompt)
+        gemini_result = _gemini_rotator.generate(gemini_prompt)
         if gemini_result["success"]:
             parsed = _parse_and_validate(gemini_result["raw_text"])
             if parsed["success"]:
@@ -364,8 +411,13 @@ def get_verdict(title: str, description: str, transcript: str, video_id: str = N
     except Exception as e:
         logger.exception("TIER 1 (Gemini) unexpected error: %s", e)
 
-    # TIER 2: Groq
-    groq_result = call_groq(prompt)
+    # TIER 2: Groq -- rebuild the prompt with a much smaller transcript cap
+    # so we stay under Groq's free-tier 8000 tokens/minute limit.
+    groq_prompt = _build_prompt(
+        title, description, transcript, max_transcript_chars=GROQ_MAX_TRANSCRIPT_CHARS
+    )
+    logger.info("Groq prompt chars=%d (capped transcript for token limit)", len(groq_prompt))
+    groq_result = call_groq(groq_prompt)
     if groq_result["success"]:
         parsed = _parse_and_validate(groq_result["raw_text"])
         if parsed["success"]:
