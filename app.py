@@ -47,6 +47,13 @@ def analyze():
 
     formatted_transcript = format_transcript_for_prompt(transcript_result["segments"])
     title_from_transcript = transcript_result.get("title", "")
+    duration_seconds = max(
+        (
+            segment.get("start", 0) + segment.get("duration", 0)
+            for segment in transcript_result["segments"]
+        ),
+        default=0,
+    )
 
     # Step 3: get the description (best-effort watch-page scrape). Pass
     # along the title we already have so scraper.py only needs to find
@@ -68,6 +75,7 @@ def analyze():
         description=meta_result["description"],
         transcript=formatted_transcript,
         video_id=video_id,
+        duration_seconds=duration_seconds,
     )
 
     if not verdict_result["success"]:
