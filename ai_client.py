@@ -140,6 +140,9 @@ def _parse_and_validate(raw_text: str) -> dict:
 
 
 def _build_prompt(title: str, description: str, transcript: str) -> str:
+    max_transcript_chars = 40000
+    if len(transcript) > max_transcript_chars:
+        transcript = transcript[:max_transcript_chars] + "\n[...transcript truncated for length...]"
     return PRISM_PROMPT_TEMPLATE.format(
         title=title, description=description, transcript=transcript
     )
@@ -255,6 +258,7 @@ def call_groq(prompt: str) -> dict:
             model=groq_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
+            max_tokens=4000,
         )
         logger.info("Groq call succeeded.")
         return {"success": True, "raw_text": completion.choices[0].message.content}

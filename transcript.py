@@ -4,10 +4,11 @@ Handles: extracting a YouTube video ID from any URL format,
 and fetching the transcript/caption text (timed segments) for that video.
 
 Source order:
-  1. Supadata (paid/free-tier API, proxies on their end -- not IP blocked)
-  2. youtube-transcript.ai (free, no key, occasionally flaky/unparseable)
-  3. yt-dlp directly (needs YT_COOKIES to get past YouTube's bot check
+  1. yt-dlp directly (needs YT_COOKIES to get past YouTube's bot check
      from most server IPs)
+  2. youtube-transcript.ai (free, no key, occasionally flaky/unparseable)
+  3. Supadata (paid/free-tier API, proxies on their end -- not IP blocked)
+     -- used as a fallback when the above fail
 """
 
 import re
@@ -20,6 +21,11 @@ import urllib.error
 import yt_dlp
 
 COOKIE_PATH = "/tmp/yt_cookies.txt"
+
+# Routes yt-dlp's YouTube requests through your phone's ngrok tunnel,
+# since that's the only source here that talks to YouTube directly
+# and gets blocked on Render's datacenter IP.
+PHONE_PROXY = os.environ.get("PHONE_PROXY", "").strip()
 
 # ---------------------------------------------------------------------------
 # Supadata config
@@ -74,7 +80,7 @@ def extract_video_id(url: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Primary source: Supadata
+# Fallback source: Supadata
 # ---------------------------------------------------------------------------
 def _fetch_from_supadata(video_id: str) -> dict:
     """
@@ -330,7 +336,7 @@ def _fetch_from_transcript_ai(video_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Fallback source: yt-dlp
+# Primary source: yt-dlp
 # ---------------------------------------------------------------------------
 
 
@@ -391,14 +397,15 @@ def _build_ydl_opts(client: str, cookie_file: str | None) -> dict:
     }
     if cookie_file:
         opts["cookiefile"] = cookie_file
+    if PHONE_PROXY:
+        opts["proxy"] = PHONE_PROXY
     return opts
 
 
 def _fetch_from_yt_dlp(video_id: str) -> dict:
     """
-    Fallback transcript fetch using yt-dlp directly. Used only when both
-    Supadata and youtube-transcript.ai fail. Also grabs the title from
-    yt-dlp's info dict, since we have it right there.
+    Primary transcript fetch using yt-dlp directly. Also grabs the title
+    from yt-dlp's info dict, since we have it right there.
 
     Note: from most server/datacenter IPs, YouTube will show a "Sign in to
     confirm you're not a bot" error here regardless of client spoofing --
@@ -477,9 +484,9 @@ def fetch_transcript(video_id: str) -> dict:
     """
     Fetches the transcript (and title, when available) for a video ID.
 
-    Tries Supadata first (not IP-blocked, has a free tier), then
-    youtube-transcript.ai (free, no key, occasionally unreliable), then
-    yt-dlp directly (with cookies if YT_COOKIES is set) as a last resort.
+    Tries yt-dlp first (with cookies if YT_COOKIES is set), then falls back
+    to youtube-transcript.ai (free, no key, occasionally unreliable), then
+    Supadata as the last resort (not IP-blocked, has a free tier).
 
     Returns:
         {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...], "title": "..."}
@@ -493,20 +500,20 @@ def fetch_transcript(video_id: str) -> dict:
 
     errors = []
 
+    primary_result = _fetch_from_yt_dlp(video_id)
+    if primary_result["success"]:
+        return primary_result
+    errors.append(f"yt-dlp error: {primary_result['error']}")
+
+    secondary_result = _fetch_from_transcript_ai(video_id)
+    if secondary_result["success"]:
+        return secondary_result
+    errors.append(f"youtube-transcript.ai error: {secondary_result['error']}")
+
     supadata_result = _fetch_from_supadata(video_id)
     if supadata_result["success"]:
         return supadata_result
     errors.append(f"Supadata error: {supadata_result['error']}")
-
-    primary_result = _fetch_from_transcript_ai(video_id)
-    if primary_result["success"]:
-        return primary_result
-    errors.append(f"youtube-transcript.ai error: {primary_result['error']}")
-
-    fallback_result = _fetch_from_yt_dlp(video_id)
-    if fallback_result["success"]:
-        return fallback_result
-    errors.append(f"yt-dlp error: {fallback_result['error']}")
 
     return {
         "success": False,
