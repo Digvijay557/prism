@@ -3,16 +3,11 @@ transcript.py
 Handles: extracting a YouTube video ID from any URL format,
 and fetching the transcript/caption text (timed segments) for that video.
 
-Also extracts the video title as a side effect of the primary fetch --
-youtube-transcript.ai's response includes it in the header line, so we
-get a reliable title for free without any extra request or scrape.
-
-Primary source: youtube-transcript.ai (free, no key, not IP-blocked).
-Retries with backoff on timeouts/5xx/429, since the endpoint generates
-transcripts on demand and a cold request can take a while.
-Fallback source: yt-dlp directly (works if the free service is ever down,
-though it needs YT_COOKIES set to get past YouTube's bot check from most
-server IPs).
+Source order:
+  1. Supadata (paid/free-tier API, proxies on their end -- not IP blocked)
+  2. youtube-transcript.ai (free, no key, occasionally flaky/unparseable)
+  3. yt-dlp directly (needs YT_COOKIES to get past YouTube's bot check
+     from most server IPs)
 """
 
 import re
@@ -20,10 +15,18 @@ import os
 import json
 import time
 import urllib.request
+import urllib.parse
 import urllib.error
 import yt_dlp
 
 COOKIE_PATH = "/tmp/yt_cookies.txt"
+
+# ---------------------------------------------------------------------------
+# Supadata config
+# ---------------------------------------------------------------------------
+SUPADATA_API_KEY = os.environ.get("SUPADATA_API_KEY", "").strip()
+SUPADATA_BASE = "https://api.supadata.ai/v1"
+SUPADATA_TIMEOUT = float(os.environ.get("SUPADATA_TIMEOUT", "30"))
 
 # Override in the environment to point at a different transcript provider
 # without touching this file, e.g. TRANSCRIPT_API_BASE=https://other-host/api
@@ -71,7 +74,80 @@ def extract_video_id(url: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Primary source: youtube-transcript.ai (or whatever TRANSCRIPT_API_BASE is)
+# Primary source: Supadata
+# ---------------------------------------------------------------------------
+def _fetch_from_supadata(video_id: str) -> dict:
+    """
+    Fetches timestamped transcript segments from Supadata.
+
+    Returns {"success": True, "segments": [...], "title": ""}
+    (Supadata's transcript endpoint doesn't return a title -- callers
+    should fall back to scraper.py's oEmbed/scrape path for that.)
+    or {"success": False, "error": "..."}
+    """
+    if not SUPADATA_API_KEY:
+        return {"success": False, "error": "SUPADATA_API_KEY not set."}
+
+    params = urllib.parse.urlencode(
+        {"videoId": video_id, "text": "false", "lang": "en"}
+    )
+    url = f"{SUPADATA_BASE}/transcript?{params}"
+
+    req = urllib.request.Request(
+        url,
+        headers={"x-api-key": SUPADATA_API_KEY, "Accept": "application/json"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=SUPADATA_TIMEOUT) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        if e.code == 402:
+            return {"success": False, "error": "Supadata: credits exhausted (402)."}
+        if e.code == 401:
+            return {"success": False, "error": "Supadata: invalid API key (401)."}
+        return {"success": False, "error": f"Supadata HTTP {e.code}: {body[:200]}"}
+    except Exception as e:
+        return {"success": False, "error": f"Supadata request failed: {type(e).__name__}: {e}"}
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"success": False, "error": f"Supadata returned unparseable JSON: {raw[:200]}"}
+
+    if "error" in data:
+        return {"success": False, "error": f"Supadata: {data.get('message', data['error'])}"}
+
+    content = data.get("content", [])
+    if not content:
+        return {"success": False, "error": "Supadata returned no transcript content."}
+
+    segments = []
+    for chunk in content:
+        text = (chunk.get("text") or "").strip()
+        if not text:
+            continue
+        segments.append(
+            {
+                "text": text,
+                "start": chunk.get("offset", 0) / 1000.0,   # ms -> s
+                "duration": chunk.get("duration", 0) / 1000.0,  # ms -> s
+            }
+        )
+
+    if not segments:
+        return {"success": False, "error": "Supadata content had no usable segments."}
+
+    return {"success": True, "segments": segments, "title": ""}
+
+
+# ---------------------------------------------------------------------------
+# Secondary source: youtube-transcript.ai (or whatever TRANSCRIPT_API_BASE is)
 # ---------------------------------------------------------------------------
 
 _TIMESTAMP_LINE_RE = re.compile(r"^\[(\d+):(\d{2})(?::(\d{2}))?\]\s*(.*)$")
@@ -178,11 +254,6 @@ def _fetch_from_transcript_ai(video_id: str) -> dict:
     """
     Fetches the transcript (and title) from the transcript API, retrying
     on timeouts and transient server errors.
-
-    The endpoint generates transcripts on demand, so a cold request for an
-    uncached video can legitimately take longer than a short timeout allows.
-    We use a generous per-attempt timeout plus a few retries with backoff
-    rather than failing straight to the yt-dlp fallback on the first hiccup.
 
     Returns {"success": True, "segments": [...], "title": "..."}
     or {"success": False, "error": ...}
@@ -324,8 +395,8 @@ def _build_ydl_opts(client: str, cookie_file: str | None) -> dict:
 
 def _fetch_from_yt_dlp(video_id: str) -> dict:
     """
-    Fallback transcript fetch using yt-dlp directly. Same logic as before,
-    used only when youtube-transcript.ai fails. Also grabs the title from
+    Fallback transcript fetch using yt-dlp directly. Used only when both
+    Supadata and youtube-transcript.ai fail. Also grabs the title from
     yt-dlp's info dict, since we have it right there.
 
     Note: from most server/datacenter IPs, YouTube will show a "Sign in to
@@ -405,35 +476,40 @@ def fetch_transcript(video_id: str) -> dict:
     """
     Fetches the transcript (and title, when available) for a video ID.
 
-    Tries the transcript API first (fast, not IP-blocked, retried on
-    timeouts/transient errors). If that fails for any reason, falls back
-    to yt-dlp directly (with cookies if YT_COOKIES is set).
+    Tries Supadata first (not IP-blocked, has a free tier), then
+    youtube-transcript.ai (free, no key, occasionally unreliable), then
+    yt-dlp directly (with cookies if YT_COOKIES is set) as a last resort.
 
     Returns:
         {"success": True, "segments": [{"text": ..., "start": ..., "duration": ...}, ...], "title": "..."}
-    ("title" may be "" if neither source could supply one -- callers should
-    fall back to scraper.py's oEmbed/scrape path in that case.)
+    ("title" may be "" if none of the sources could supply one -- callers
+    should fall back to scraper.py's oEmbed/scrape path in that case.)
     or:
         {"success": False, "error": "<reason>"}
     """
     if not video_id:
         return {"success": False, "error": "Invalid or missing video ID."}
 
+    errors = []
+
+    supadata_result = _fetch_from_supadata(video_id)
+    if supadata_result["success"]:
+        return supadata_result
+    errors.append(f"Supadata error: {supadata_result['error']}")
+
     primary_result = _fetch_from_transcript_ai(video_id)
     if primary_result["success"]:
         return primary_result
+    errors.append(f"youtube-transcript.ai error: {primary_result['error']}")
 
     fallback_result = _fetch_from_yt_dlp(video_id)
     if fallback_result["success"]:
         return fallback_result
+    errors.append(f"yt-dlp error: {fallback_result['error']}")
 
     return {
         "success": False,
-        "error": (
-            f"Transcript fetch failed. "
-            f"Primary source error: {primary_result['error']} | "
-            f"Fallback source error: {fallback_result['error']}"
-        ),
+        "error": "Transcript fetch failed. " + " | ".join(errors),
     }
 
 
