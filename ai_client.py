@@ -37,6 +37,11 @@ PRISM_PROMPT_TEMPLATE = """You are Prism. You judge whether an educational YouTu
 
 INPUT: TITLE, DESCRIPTION, DURATION, TRANSCRIPT (timestamped segments: [seconds] text)
 
+SCOPE
+Prism only judges educational/instructional content. If the video is not that (e.g. entertainment, comedy, vlogs, music videos, drama, reaction content, sports, gaming without teaching intent), respond with ONLY this object and nothing else:
+{{"verdict": "NOT_APPLICABLE", "verdict_reason": "This video isn't educational content, so Prism can't evaluate a promise-vs-reality verdict for it."}}
+Otherwise, proceed with the full Promise → Reality → Time analysis below and output the complete schema.
+
 FRAMEWORK — PROMISE → REALITY → TIME
 
 PROMISE: the literal claim in the title/description. Not a charitable reading of it. "Master X in 10 min" promises mastery; "Intro to X" promises an intro. Hold it to what it actually said.
@@ -67,6 +72,7 @@ VERDICTS
 WORTH_WATCHING — delivers the core promise, most runtime earns its place.
 WATCH_SELECTIVELY — real but uneven value, or partial delivery. Viewer should use the timeline to skip around.
 SKIP — doesn't deliver the core promise, or value doesn't justify runtime, or title misrepresents content. Use without hesitation.
+NOT_APPLICABLE — the video isn't educational/instructional content at all (see SCOPE above).
 
 TIMELINE
 - Covers 0 to full duration, no gaps, no overlaps — each segment's start = previous segment's end.
@@ -91,6 +97,8 @@ OUTPUT — valid JSON only, no fences, no preamble:
   ]
 }}
 
+(For NOT_APPLICABLE, output ONLY the two-field object shown in SCOPE above — omit every other field.)
+
 TITLE: {title}
 DESCRIPTION: {description}
 VIDEO DURATION: {duration_readable} ({duration_seconds} seconds)
@@ -102,7 +110,10 @@ REQUIRED_FIELDS = [
     "reality_missing", "depth_notes", "skill_level_fit",
     "skill_level_note", "time_assessment", "valuable_timeline",
 ]
-VALID_VERDICTS = {"WORTH_WATCHING", "WATCH_SELECTIVELY", "SKIP"}
+# Fields required for the short-circuit NOT_APPLICABLE response -- it
+# deliberately skips the rest of REQUIRED_FIELDS above.
+NOT_APPLICABLE_FIELDS = ["verdict", "verdict_reason"]
+VALID_VERDICTS = {"WORTH_WATCHING", "WATCH_SELECTIVELY", "SKIP", "NOT_APPLICABLE"}
 
 
 # ---------------------------------------------------------------------------
@@ -117,13 +128,26 @@ def _strip_markdown_fences(text: str) -> str:
 
 
 def _validate_schema(data: dict) -> tuple[bool, str]:
-    """Checks all required fields exist and verdict is a valid enum value."""
-    for field in REQUIRED_FIELDS:
-        if field not in data:
-            return False, f"Missing field: {field}"
+    """
+    Checks all required fields exist and verdict is a valid enum value.
+    NOT_APPLICABLE is a short-circuit response -- it only needs
+    verdict + verdict_reason, not the full report schema.
+    """
+    if "verdict" not in data:
+        return False, "Missing field: verdict"
 
     if data["verdict"] not in VALID_VERDICTS:
         return False, f"Invalid verdict value: {data['verdict']}"
+
+    if data["verdict"] == "NOT_APPLICABLE":
+        for field in NOT_APPLICABLE_FIELDS:
+            if field not in data:
+                return False, f"Missing field: {field}"
+        return True, ""
+
+    for field in REQUIRED_FIELDS:
+        if field not in data:
+            return False, f"Missing field: {field}"
 
     if not isinstance(data["reality_covered"], list):
         return False, "reality_covered must be a list"

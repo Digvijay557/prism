@@ -6,7 +6,7 @@
 <title>Prism</title>
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#f5f1ed">
-<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,6 +52,35 @@
     display: flex;
     flex-direction: column;
   }
+
+  .back-btn {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 50;
+    box-shadow: none;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-14px, -6px);
+    transition: opacity 260ms ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .back-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, 0);
+  }
+
+  .back-btn:active { transform: scale(0.92); }
 
   /* ---------- Header ---------- */
 
@@ -175,6 +204,7 @@
   }
 
   .stage-word.is-love {
+    font-size: clamp(40px, 24vw, 92px);
     color: var(--r-1);
     text-shadow:
       1px 1px 0 var(--bone),
@@ -191,6 +221,7 @@
   }
 
   .stage-word.is-error {
+    font-size: clamp(40px, 24vw, 92px);
     color: var(--r-1);
     text-shadow:
       1px 1px 0 rgba(224,96,122,0.25),
@@ -207,6 +238,23 @@
       3px 3px 0 var(--bone);
     animation: word-pulse 1.6s ease-in-out infinite;
   }
+
+  .na-block {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 10px;
+  }
+
+  .na-face {
+    width: 132px;
+    animation: love-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .na-face svg { display: block; width: 100%; height: auto; }
+  .na-face svg rect { fill: var(--khaki-beige); filter: drop-shadow(3px 3px 0 var(--bone)); }
+  .na-reason { max-width: 300px; font-size: 14px; line-height: 1.55; color: var(--slate-grey); }
 
   @keyframes word-pulse {
     0%, 100% { opacity: 1; }
@@ -507,6 +555,12 @@
 
 <div class="app">
 
+  <button id="back-btn" class="back-btn" onclick="goBack()" aria-label="Back">
+    <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+      <path d="M17 7H2M2 7L7.5 1.5M2 7L7.5 12.5" stroke="#252323" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+
   <div class="header">
     <div class="wordmark pixel">PRISM</div>
     <div class="tagline">worth ur time</div>
@@ -527,6 +581,16 @@
 
   <div class="stage" id="stage">
     <div class="stage-word pixel" id="stage-word">uwu</div>
+    <div class="na-block" id="na-block">
+      <div class="na-face">
+        <svg viewBox="0 0 240 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="18" y="20" width="76" height="40" rx="10"></rect>
+          <rect x="146" y="20" width="76" height="40" rx="10"></rect>
+          <rect x="40" y="150" width="160" height="34" rx="10"></rect>
+        </svg>
+      </div>
+      <p class="na-reason" id="na-reason"></p>
+    </div>
     <div class="triangle-wrap" id="triangle-wrap">
       <div class="glow"></div>
       <div class="triangle"></div>
@@ -565,6 +629,9 @@
   const stageEl = document.getElementById("stage");
   const stageWordEl = document.getElementById("stage-word");
   const triangleWrapEl = document.getElementById("triangle-wrap");
+  const backBtn = document.getElementById("back-btn");
+  const naBlockEl = document.getElementById("na-block");
+  const naReasonEl = document.getElementById("na-reason");
   const resultsEl = document.getElementById("results");
   const statusEl = document.getElementById("status");
   const btn = document.getElementById("analyze-btn");
@@ -604,8 +671,12 @@
 
   triangleWrapEl.addEventListener("click", triggerLove);
 
+  function goBack() {
+    setStage("idle");
+  }
+
   function setStage(mode) {
-    // mode: "idle" | "analyzing" | "error"
+    // mode: "idle" | "analyzing" | "error" | "not-applicable"
     currentStageMode = mode;
     if (loveTimer) { clearTimeout(loveTimer); loveTimer = null; }
     stageEl.style.display = "flex";
@@ -614,6 +685,12 @@
 
     triangleWrapEl.classList.remove("analyzing", "pointing-down");
     stageWordEl.classList.remove("is-analyzing", "is-error", "is-love");
+    backBtn.classList.remove("visible");
+    stageWordEl.style.display = "";
+    triangleWrapEl.style.display = "";
+    naBlockEl.style.display = "none";
+    stageWordEl.style.display = "";
+    triangleWrapEl.style.display = "";
 
     if (mode === "idle") {
       stageWordEl.textContent = "uwu";
@@ -627,7 +704,17 @@
       stageWordEl.classList.add("is-error");
       triangleWrapEl.classList.add("pointing-down");
       playPop(stageWordEl);
+    } else if (mode === "not-applicable") {
+      stageWordEl.style.display = "none";
+      triangleWrapEl.style.display = "none";
+      naBlockEl.style.display = "flex";
+      backBtn.classList.add("visible");
     }
+  }
+
+  function showNotApplicable(reason) {
+    naReasonEl.textContent = reason || "This video isn't educational content, so Prism can't evaluate it.";
+    setStage("not-applicable");
   }
 
   function showSkeleton() {
@@ -792,6 +879,36 @@
     });
   }
 
+  function runDemoAnimation() {
+    const demoData = {
+      verdict: {
+        verdict: "WORTH_WATCHING",
+        verdict_reason: "This demo shows the complete animated result sequence.",
+        promise: "A clear, practical explanation with useful takeaways.",
+        reality_covered: ["The main concept", "Concrete examples", "Practical takeaways"],
+        reality_missing: ["A deeper recap"],
+        depth_notes: "The explanation connects the idea to a realistic use case.",
+        skill_level_fit: "Good for beginners and useful for intermediate viewers.",
+        skill_level_note: "Demo content only.",
+        time_assessment: "Worth the time.",
+        valuable_timeline: [
+          { start_seconds: 0, end_seconds: 20, label: "Introduction", value: "high" },
+          { start_seconds: 20, end_seconds: 80, label: "Core explanation", value: "high" },
+          { start_seconds: 80, end_seconds: 120, label: "Example", value: "medium" }
+        ]
+      }
+    };
+
+    statusEl.textContent = "";
+    setStage("analyzing");
+    showSkeleton();
+    setTimeout(() => renderResults(demoData), 10000);
+  }
+
+  window.testFullAnimation = runDemoAnimation;
+  window.testAnimation = runDemoAnimation;
+  window.testNotApplicable = () => showNotApplicable("This video isn't educational content, so Prism can't evaluate it.");
+
   async function analyze() {
     const url = document.getElementById("url-input").value.trim();
 
@@ -826,7 +943,12 @@
       showSkeleton();
       await new Promise(r => setTimeout(r, 550));
       statusEl.textContent = "";
-      renderResults(data);
+
+      if (data.verdict && data.verdict.verdict === "NOT_APPLICABLE") {
+        showNotApplicable(data.verdict.verdict_reason);
+      } else {
+        renderResults(data);
+      }
 
     } catch (err) {
       statusEl.textContent = "Could not reach the server. Check your connection.";
