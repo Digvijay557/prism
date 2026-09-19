@@ -6,7 +6,7 @@
 <title>Prism</title>
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#f5f1ed">
-<link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+<link id="favicon" rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -641,6 +641,31 @@
   const resultsEl = document.getElementById("results");
   const statusEl = document.getElementById("status");
   const btn = document.getElementById("analyze-btn");
+  const faviconEl = document.getElementById("favicon");
+  const defaultFavicon = "/static/icons/favicon.svg";
+  const analyzingFavicon = `data:image/svg+xml,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 768">
+      <defs>
+        <linearGradient id="rainbow" x1="50%" y1="0%" x2="50%" y2="100%">
+          <stop offset="0%" stop-color="#e9366c"/><stop offset="18%" stop-color="#f87967"/>
+          <stop offset="36%" stop-color="#ffc55a"/><stop offset="53%" stop-color="#a8d76f"/>
+          <stop offset="70%" stop-color="#58bdd1"/><stop offset="86%" stop-color="#7378e8"/>
+          <stop offset="100%" stop-color="#c064d8"/>
+        </linearGradient>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="34"/>
+        </filter>
+      </defs>
+      <path fill="url(#rainbow)" opacity=".9" filter="url(#glow)" d="M384 110 68 636h632L384 110Z">
+        <animate attributeName="opacity" values=".35;.95;.35" dur="1.6s" repeatCount="indefinite"/>
+      </path>
+      <path fill="url(#rainbow)" d="M384 110 68 636h632L384 110Z"/>
+    </svg>
+  `)}`;
+
+  function setFaviconAnalyzing(isAnalyzing) {
+    faviconEl.href = isAnalyzing ? analyzingFavicon : defaultFavicon;
+  }
 
   function playPop(el) {
     el.style.animation = "none";
@@ -684,6 +709,7 @@
   function setStage(mode) {
     // mode: "idle" | "analyzing" | "error" | "not-applicable"
     currentStageMode = mode;
+    setFaviconAnalyzing(mode === "analyzing");
     if (loveTimer) { clearTimeout(loveTimer); loveTimer = null; }
     stageEl.style.display = "flex";
     resultsEl.innerHTML = "";
@@ -784,6 +810,7 @@
 
   function renderResults(data) {
     if (loveTimer) { clearTimeout(loveTimer); loveTimer = null; }
+    setFaviconAnalyzing(false);
     stageEl.style.display = "none";
     const v = data.verdict;
     const badgeClass = verdictBadgeClass(v.verdict);
